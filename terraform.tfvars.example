@@ -1,0 +1,38 @@
+talos_cluster_name = "example-cluster"
+talos_vip          = "192.168.10.10"
+talos_version      = "v1.11.3"
+
+talos_controlplanes = {
+  "cp-01" = {
+    ip          = "192.168.10.11"
+    hostname    = "cp-01"
+    interface   = "eth0"
+    disk        = "/dev/sda"
+    node_labels = {
+      "topology.kubernetes.io/zone" = "a"
+    }
+  }
+}
+
+talos_workernodes = {
+  "worker-01" = {
+    ip          = "192.168.10.21"
+    hostname    = "worker-01"
+    interface   = "eth0"
+    disk        = "/dev/sda"
+    node_labels = {
+      "topology.kubernetes.io/zone" = "b"
+    }
+  }
+}
+
+# Optional: Override API Port
+# talos_api_port = 6443
+
+# Optional: Inline Manifests
+# talos_inline_manifests = [
+#   {
+#     name     = "example-manifest"
+#     contents = "apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: example\n  namespace: default"
+#   }
+# ]

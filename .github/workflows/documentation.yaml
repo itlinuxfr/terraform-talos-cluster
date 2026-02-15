@@ -1,0 +1,28 @@
+name: terraform-docs
+on:
+  workflow_run:
+    workflows: [ "terraform-test" ]
+    types:
+    - completed
+
+permissions:
+  contents: write
+jobs:
+  terraform-docs:
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+      with:
+        ref: main
+
+    - name: Render terraform docs and push changes back to PR
+      uses: terraform-docs/gh-actions@v1.4.1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        working-dir: .
+        output-file: README.md
+        output-method: inject
+        git-push: "true"
+        git-commit-message: "Automated Terrraform docs update"

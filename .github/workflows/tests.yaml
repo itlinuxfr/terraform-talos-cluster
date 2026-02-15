@@ -1,0 +1,29 @@
+name: terraform-test
+
+on:
+  workflow_run:
+    workflows: [ "terraform-lint" ]
+    types:
+    - completed
+
+concurrency:
+  group: terraform-test-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        name: Checkout source code
+
+      - uses: hashicorp/setup-terraform@v3
+        name: Setup Terraform
+        with:
+          terraform_version: "1.12.0"
+
+      - name: Terraform Init
+        run: terraform init
+
+      - name: Terraform Test
+        run: terraform test
