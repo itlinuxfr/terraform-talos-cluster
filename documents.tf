@@ -97,17 +97,16 @@ locals {
             apiVersion = local.doc_api_version
             kind       = "LinkAliasConfig"
             name       = local.doc_link_name
-            selector   = { match = "link.kind == '' && link.type == 'ether'" }
+            # link.type is an enum: 1 is LINK_ETHER. With an empty kind it is a physical Ethernet card (the Physical() test of Talos).
+            selector = { match = "link.type == 1 && link.kind == ''" }
           }),
           yamlencode({
             apiVersion = local.doc_api_version
             kind       = "LinkConfig"
             name       = local.doc_link_name
             addresses  = [{ address = "${node.ip}/${local.network_prefix}" }]
-            routes = [{
-              destination = strcontains(var.network.gateway, ":") ? "::/0" : "0.0.0.0/0"
-              gateway     = var.network.gateway
-            }]
+            # No destination: this is the default route (a node refuses 0.0.0.0/0 and ::/0 as an unspecified prefix).
+            routes = [{ gateway = var.network.gateway }]
           }),
         ],
         node.role == "controlplane" && var.network.vip != null ? [yamlencode({

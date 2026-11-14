@@ -133,9 +133,9 @@ run "static_network_writes_an_alias_a_link_and_a_virtual_ip_on_control_planes_on
   assert {
     condition = (
       [for p in data.talos_machine_configuration.node["cp-1"].config_patches : yamldecode(p) if try(yamldecode(p).kind, "") == "LinkAliasConfig"][0].name == "net0" &&
-      [for p in data.talos_machine_configuration.node["cp-1"].config_patches : yamldecode(p) if try(yamldecode(p).kind, "") == "LinkAliasConfig"][0].selector.match == "link.kind == '' && link.type == 'ether'" &&
+      [for p in data.talos_machine_configuration.node["cp-1"].config_patches : yamldecode(p) if try(yamldecode(p).kind, "") == "LinkAliasConfig"][0].selector.match == "link.type == 1 && link.kind == ''" &&
       [for p in data.talos_machine_configuration.node["cp-1"].config_patches : yamldecode(p) if try(yamldecode(p).kind, "") == "LinkConfig"][0].addresses == [{ address = "192.0.2.3/27" }] &&
-      [for p in data.talos_machine_configuration.node["cp-1"].config_patches : yamldecode(p) if try(yamldecode(p).kind, "") == "LinkConfig"][0].routes == [{ destination = "0.0.0.0/0", gateway = "192.0.2.1" }] &&
+      [for p in data.talos_machine_configuration.node["cp-1"].config_patches : yamldecode(p) if try(yamldecode(p).kind, "") == "LinkConfig"][0].routes == [{ gateway = "192.0.2.1" }] &&
       [for p in data.talos_machine_configuration.node["cp-1"].config_patches : yamldecode(p) if try(yamldecode(p).kind, "") == "Layer2VIPConfig"][0].name == "192.0.2.2" &&
       [for p in data.talos_machine_configuration.node["cp-1"].config_patches : yamldecode(p) if try(yamldecode(p).kind, "") == "Layer2VIPConfig"][0].link == "net0"
     )
@@ -151,7 +151,7 @@ run "static_network_writes_an_alias_a_link_and_a_virtual_ip_on_control_planes_on
   }
 }
 
-run "ipv6_gateway_writes_an_ipv6_default_route" {
+run "ipv6_gateway_is_the_default_route_gateway" {
   command = plan
 
   variables {
@@ -162,8 +162,8 @@ run "ipv6_gateway_writes_an_ipv6_default_route" {
   }
 
   assert {
-    condition     = [for p in data.talos_machine_configuration.node["cp-1"].config_patches : yamldecode(p) if try(yamldecode(p).kind, "") == "LinkConfig"][0].routes == [{ destination = "::/0", gateway = "2001:db8::1" }]
-    error_message = "An IPv6 gateway must give an IPv6 default route."
+    condition     = [for p in data.talos_machine_configuration.node["cp-1"].config_patches : yamldecode(p) if try(yamldecode(p).kind, "") == "LinkConfig"][0].routes == [{ gateway = "2001:db8::1" }]
+    error_message = "An IPv6 gateway must be the gateway of the default route (no destination)."
   }
 }
 

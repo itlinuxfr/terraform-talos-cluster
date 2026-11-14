@@ -21,6 +21,9 @@ Design rules specific to this module:
   config`), and only the node validates this: never mix them for the same setting, and keep the two sets of locals in step. Field names come from the Talos sources at the release tag
   (`pkg/machinery/config/types`), not from the website. A later contract is refused (`talos_version` validation) until it is checked: read what the provider generates for it
   (offline, see below), diff the documents against `documents.tf`, then raise the limit.
+- **The offline parser does not run the node's validation.** At the first real apply of the v1.14 documents the node refused two things the provider accepted: a CEL selector that compared the enum
+  `link.type` with a string (it is an integer: `1` is `LINK_ETHER`), and `0.0.0.0/0` as a route destination (a default route has no `destination`). Check every CEL expression and every address against the
+  Go validation of the document (`Validate()` in its source), not only against the example.
 - Patch a document the provider already generates (merge by kind), never create one the provider omits for that role: a worker gets no `KubeProxyConfig` or `KubeFlannelCNIConfig`,
   and a created document lacks required fields such as `image`. `$patch: delete` removes a document (Flannel for `cni = none`). A merge patch cannot remove a map key: the control-plane
   taint is removed by deleting `KubeNodeConfig` and writing it again. Check each new document the same way: real provider offline, then a real node.

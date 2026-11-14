@@ -51,6 +51,7 @@ Checked in the provider source (v0.12.0):
   `KubeletConfig`, `KubeNodeConfig`, `KubeAPIServerConfig`...), and the module patches those documents. With `v1.13` or earlier it writes the deprecated `v1alpha1` fields. A node refuses a
   setting written in both formats, so the module never mixes them. Later contracts are refused until the module is checked against them. Settings you pass through `config_patches`
   must use the same format as the contract: for `v1.14`, write documents (for example `SysctlConfig`), not `machine.sysctls`.
+- Checked on a real cluster: one control plane and one worker on Talos 1.14.6 with the `v1.14` contract (SecureBoot, TPM-sealed LUKS2, virtual IP, flannel, kube-proxy), updated in place from the `v1.13` format without a restart.
 - With the `v1.14` contract, the primary network card is renamed `net0` by a `LinkAliasConfig` (it matches the one physical Ethernet link), and the static address, the default route and the
   virtual IP are set on it. A machine with several physical cards needs its own patches. `allow_scheduling_on_control_planes` deletes and rewrites the generated `KubeNodeConfig` (a merge patch cannot
   remove the taint), which also drops its `exclude-from-external-load-balancers` label. etcd has no document yet: its settings stay in the v1alpha1 `cluster.etcd` section.
