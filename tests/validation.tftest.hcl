@@ -5,7 +5,6 @@ mock_provider "talos" {}
 variables {
   cluster_name       = "demo"
   cluster_endpoint   = "https://192.0.2.2:6443"
-  talos_version      = "v1.13"
   kubernetes_version = "v1.37.2"
   nodes = {
     "cp-1"     = { role = "controlplane", ip = "192.0.2.3" }
@@ -35,59 +34,6 @@ run "endpoint_without_scheme_refused" {
     cluster_endpoint = "192.0.2.2:6443"
   }
   expect_failures = [var.cluster_endpoint]
-}
-
-run "talos_version_without_minor_refused" {
-  command = plan
-  variables {
-    talos_version = "v1"
-  }
-  expect_failures = [var.talos_version]
-}
-
-run "talos_version_accepts_a_patch_release" {
-  command = plan
-  variables {
-    talos_version = "v1.13.12"
-  }
-}
-
-run "talos_version_accepts_an_older_contract" {
-  command = plan
-  variables {
-    talos_version = "1.12"
-  }
-}
-
-# The module writes the multi-document format for the v1.14 contract. A later contract is refused until the module is checked against it.
-run "talos_version_accepts_contract_v1_14" {
-  command = plan
-  variables {
-    talos_version = "v1.14"
-  }
-}
-
-run "talos_version_accepts_v1_14_patch_release" {
-  command = plan
-  variables {
-    talos_version = "v1.14.6"
-  }
-}
-
-run "contract_v1_15_refused" {
-  command = plan
-  variables {
-    talos_version = "v1.15"
-  }
-  expect_failures = [var.talos_version]
-}
-
-run "contract_v1_15_patch_release_refused" {
-  command = plan
-  variables {
-    talos_version = "v1.15.0"
-  }
-  expect_failures = [var.talos_version]
 }
 
 run "kubernetes_version_without_v_refused" {

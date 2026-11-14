@@ -1,13 +1,13 @@
-# Configuration for the v1.14 contract and later: multi-document patches instead of the deprecated v1alpha1 fields.
+# The configuration patches of each node, as Talos multi-document patches (Talos 1.14 and later).
 #
-# From the v1.14 contract the Talos provider generates a document for most settings (UnattendedInstallConfig, ResolverConfig, KubeletConfig, KubeNodeConfig,
-# KubeAPIServerConfig...). A node refuses the same setting in both formats, so for these contracts the module patches the generated document of the same kind
-# (a patch is merged by kind and name) and writes no v1alpha1 field for it. For the v1.13 contract and earlier, main.tf writes the v1alpha1 patches.
-# Field names come from the Talos v1.14 sources (pkg/machinery/config/types).
+# The Talos provider generates a document for most settings (UnattendedInstallConfig, ResolverConfig, KubeletConfig, KubeNodeConfig, KubeAPIServerConfig...).
+# The module patches the generated document of the same kind (a patch is merged by kind and name). It never writes the deprecated v1alpha1 field of a setting
+# that has a document: a node refuses the same setting in both formats. Field names come from the Talos sources (pkg/machinery/config/types).
 
 locals {
-  contract_minor = can(regex("^v?[0-9]+\\.([0-9]+)", var.talos_version)) ? tonumber(regex("^v?[0-9]+\\.([0-9]+)", var.talos_version)[0]) : 0
-  multidoc       = local.contract_minor >= 14
+  # The Talos configuration contract the module generates. It is NOT the installed Talos version (installer_image is): a later Talos release runs with this contract
+  # until a release of the module moves it.
+  talos_contract = "v1.14"
 
   doc_api_version = "v1alpha1"
 
@@ -128,6 +128,71 @@ locals {
         { labels = merge(local.node_labels[name], node.role == "controlplane" && var.allow_scheduling_on_control_planes ? { "node-role.kubernetes.io/control-plane" = "" } : {}) },
         length(node.taints) > 0 ? { taints = node.taints } : {},
       ))] : [],
+    )
+  }
+
+  # ---------------------------------------------------------------------------------------------------------------
+  # Settings shared by the documents: etcd (no document yet: it stays in the v1alpha1 cluster.etcd section), API server names, installation, labels.
+  # ---------------------------------------------------------------------------------------------------------------
+
+  etcd = merge(
+    length(local.node_subnets) > 0 ? { advertisedSubnets = local.node_subnets } : {},
+    var.expose_control_plane_metrics ? { extraArgs = { "listen-metrics-urls" = "http://0.0.0.0:2381" } } : {},
+  )
+
+  api_server_cert_sans = distinct(concat(var.api_server_cert_sans, var.network != null && var.network.vip != null ? [var.network.vip] : []))
+
+  # ---------------------------------------------------------------------------------------------------------------
+  # Disk encryption (LUKS2). The key of STATE is sealed alone; the key of EPHEMERAL is also locked to the STATE salt.
+  # ---------------------------------------------------------------------------------------------------------------
+
+  encryption_method = var.encryption == null ? "" : var.encryption.method
+
+  encryption_key = merge(
+    local.encryption_method == "tpm" ? {
+      # checkSecurebootStatusOnEnroll is a field of tpm itself, next to options (which only holds pcrs). Under options, the Talos parser refuses the document.
+      tpm = try(var.encryption.tpm_require_secureboot, false) ? { checkSecurebootStatusOnEnroll = true } : {}
+    } : {},
+    local.encryption_method == "node_id" ? { nodeID = {} } : {},
+  )
+
+  encryption_patches = var.encryption == null ? [] : [
+    yamlencode({
+      apiVersion = "v1alpha1"
+      kind       = "VolumeConfig"
+      name       = "STATE"
+      encryption = { provider = "luks2", keys = [merge({ slot = 0 }, local.encryption_key)] }
+    }),
+    yamlencode({
+      apiVersion = "v1alpha1"
+      kind       = "VolumeConfig"
+      name       = "EPHEMERAL"
+      encryption = { provider = "luks2", keys = [merge({ slot = 0, lockToState = true }, local.encryption_key)] }
+    }),
+  ]
+
+  node_image = { for name, node in var.nodes : name => node.image != null ? node.image : var.installer_image }
+  node_disk  = { for name, node in var.nodes : name => node.install_disk != null ? node.install_disk : var.install_disk }
+
+  node_install = {
+    for name, node in var.nodes : name => merge(
+      local.node_disk[name] != null ? { disk = local.node_disk[name] } : {},
+      local.node_image[name] != null ? { image = local.node_image[name] } : {},
+    )
+  }
+
+  node_labels = { for name, node in var.nodes : name => merge(var.node_labels, node.labels) }
+
+  # Order matters: the module's patches first, then the caller's, so that the caller can override.
+  node_patches = {
+    for name, node in var.nodes : name => concat(
+      local.doc_base,
+      node.role == "controlplane" ? local.doc_controlplane : [],
+      local.encryption_patches,
+      local.doc_node[name],
+      var.config_patches.all,
+      node.role == "controlplane" ? var.config_patches.controlplane : var.config_patches.worker,
+      node.config_patches,
     )
   }
 }

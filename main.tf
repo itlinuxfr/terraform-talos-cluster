@@ -21,173 +21,12 @@ locals {
 
   network_prefix = var.network != null ? tonumber(split("/", var.network.cidr)[1]) : null
   node_subnets   = length(var.node_subnets) > 0 ? var.node_subnets : (var.network != null ? [var.network.cidr] : [])
-
-  # ---------------------------------------------------------------------------------------------------------------
-  # Patches for every node. Empty sections are left out, so the generated configuration stays as close as possible to the Talos default.
-  # ---------------------------------------------------------------------------------------------------------------
-
-  base_network = merge(
-    var.cni == "none" ? { cni = { name = "none" } } : {},
-    length(var.pod_subnets) > 0 ? { podSubnets = var.pod_subnets } : {},
-    length(var.service_subnets) > 0 ? { serviceSubnets = var.service_subnets } : {},
-  )
-
-  base_cluster = merge(
-    length(local.base_network) > 0 ? { network = local.base_network } : {},
-    var.disable_kube_proxy ? { proxy = { disabled = true } } : {},
-    var.allow_scheduling_on_control_planes ? { allowSchedulingOnControlPlanes = true } : {},
-  )
-
-  base_kubelet = merge(
-    length(local.node_subnets) > 0 ? { nodeIP = { validSubnets = local.node_subnets } } : {},
-    length(var.kubelet_extra_args) > 0 ? { extraArgs = var.kubelet_extra_args } : {},
-  )
-
-  base_machine = merge(
-    length(var.nameservers) > 0 ? { network = { nameservers = var.nameservers } } : {},
-    length(local.base_kubelet) > 0 ? { kubelet = local.base_kubelet } : {},
-  )
-
-  base_patch = yamlencode({ machine = local.base_machine, cluster = local.base_cluster })
-
-  # ---------------------------------------------------------------------------------------------------------------
-  # Patch for control planes: etcd and API server settings, OIDC, control plane metrics.
-  # ---------------------------------------------------------------------------------------------------------------
-
-  oidc_file_path = "/var/etc/kubernetes/authentication-config.yaml"
-
-  # AuthenticationConfiguration v1 exists from Kubernetes 1.34 (checked in the oidc variable).
-  oidc_config = var.oidc == null ? null : yamlencode({
-    apiVersion = "apiserver.config.k8s.io/v1"
-    kind       = "AuthenticationConfiguration"
-    jwt = [{
-      issuer = merge(
-        { url = var.oidc.issuer_url, audiences = [var.oidc.client_id] },
-        var.oidc.ca_certificate != null ? { certificateAuthority = var.oidc.ca_certificate } : {},
-      )
-      claimMappings = {
-        username = { claim = var.oidc.username_claim, prefix = var.oidc.username_prefix }
-        groups   = { claim = var.oidc.groups_claim, prefix = var.oidc.groups_prefix }
-      }
-    }]
-  })
-
-  etcd = merge(
-    length(local.node_subnets) > 0 ? { advertisedSubnets = local.node_subnets } : {},
-    var.expose_control_plane_metrics ? { extraArgs = { "listen-metrics-urls" = "http://0.0.0.0:2381" } } : {},
-  )
-
-  api_server_cert_sans = distinct(concat(var.api_server_cert_sans, var.network != null && var.network.vip != null ? [var.network.vip] : []))
-
-  api_server = merge(
-    length(local.api_server_cert_sans) > 0 ? { certSANs = local.api_server_cert_sans } : {},
-    var.oidc != null ? { extraArgs = { "authentication-config" = local.oidc_file_path } } : {},
-    var.oidc != null ? { extraVolumes = [{ hostPath = local.oidc_file_path, mountPath = local.oidc_file_path, readonly = true }] } : {},
-  )
-
-  metrics_bind_address = var.expose_control_plane_metrics ? { extraArgs = { "bind-address" = "0.0.0.0" } } : {}
-
-  controlplane_cluster = {
-    for section, settings in {
-      etcd              = local.etcd
-      apiServer         = local.api_server
-      controllerManager = local.metrics_bind_address
-      scheduler         = local.metrics_bind_address
-    } : section => settings if length(settings) > 0
-  }
-
-  controlplane_machine = var.oidc != null ? {
-    files = [{ path = local.oidc_file_path, permissions = 420, op = "create", content = local.oidc_config }]
-  } : {}
-
-  controlplane_patch = yamlencode({ machine = local.controlplane_machine, cluster = local.controlplane_cluster })
-
-  # ---------------------------------------------------------------------------------------------------------------
-  # Disk encryption (LUKS2). The key of STATE is sealed alone; the key of EPHEMERAL is also locked to the STATE salt.
-  # ---------------------------------------------------------------------------------------------------------------
-
-  encryption_method = var.encryption == null ? "" : var.encryption.method
-
-  encryption_key = merge(
-    local.encryption_method == "tpm" ? {
-      # checkSecurebootStatusOnEnroll is a field of tpm itself, next to options (which only holds pcrs). Under options, the Talos parser refuses the document.
-      tpm = try(var.encryption.tpm_require_secureboot, false) ? { checkSecurebootStatusOnEnroll = true } : {}
-    } : {},
-    local.encryption_method == "node_id" ? { nodeID = {} } : {},
-  )
-
-  encryption_patches = var.encryption == null ? [] : [
-    yamlencode({
-      apiVersion = "v1alpha1"
-      kind       = "VolumeConfig"
-      name       = "STATE"
-      encryption = { provider = "luks2", keys = [merge({ slot = 0 }, local.encryption_key)] }
-    }),
-    yamlencode({
-      apiVersion = "v1alpha1"
-      kind       = "VolumeConfig"
-      name       = "EPHEMERAL"
-      encryption = { provider = "luks2", keys = [merge({ slot = 0, lockToState = true }, local.encryption_key)] }
-    }),
-  ]
-
-  # ---------------------------------------------------------------------------------------------------------------
-  # Patch of each node: installation, static network, labels and taints.
-  # ---------------------------------------------------------------------------------------------------------------
-
-  node_image = { for name, node in var.nodes : name => node.image != null ? node.image : var.installer_image }
-  node_disk  = { for name, node in var.nodes : name => node.install_disk != null ? node.install_disk : var.install_disk }
-
-  node_install = {
-    for name, node in var.nodes : name => merge(
-      local.node_disk[name] != null ? { disk = local.node_disk[name] } : {},
-      local.node_image[name] != null ? { image = local.node_image[name] } : {},
-    )
-  }
-
-  node_labels = { for name, node in var.nodes : name => merge(var.node_labels, node.labels) }
-
-  node_patch = {
-    for name, node in var.nodes : name => yamlencode({
-      machine = merge(
-        length(local.node_install[name]) > 0 ? { install = local.node_install[name] } : {},
-        var.network != null ? {
-          network = {
-            interfaces = [merge(
-              {
-                deviceSelector = { physical = true }
-                dhcp           = false
-                addresses      = ["${node.ip}/${local.network_prefix}"]
-                routes         = [{ network = strcontains(var.network.gateway, ":") ? "::/0" : "0.0.0.0/0", gateway = var.network.gateway }]
-              },
-              node.role == "controlplane" && var.network.vip != null ? { vip = { ip = var.network.vip } } : {},
-            )]
-          }
-        } : {},
-        length(local.node_labels[name]) > 0 ? { nodeLabels = local.node_labels[name] } : {},
-        length(node.taints) > 0 ? { nodeTaints = node.taints } : {},
-      )
-    })
-  }
-
-  # Order matters: the module's patches first, then the caller's, so that the caller can override.
-  node_patches = {
-    for name, node in var.nodes : name => concat(
-      local.multidoc ? local.doc_base : [local.base_patch],
-      node.role == "controlplane" ? (local.multidoc ? local.doc_controlplane : [local.controlplane_patch]) : [],
-      local.encryption_patches,
-      local.multidoc ? local.doc_node[name] : [local.node_patch[name]],
-      var.config_patches.all,
-      node.role == "controlplane" ? var.config_patches.controlplane : var.config_patches.worker,
-      node.config_patches,
-    )
-  }
 }
 
 resource "talos_machine_secrets" "this" {
   count = local.external_secrets ? 0 : 1
 
-  talos_version = var.talos_version
+  talos_version = local.talos_contract
 }
 
 data "talos_machine_configuration" "node" {
@@ -197,7 +36,7 @@ data "talos_machine_configuration" "node" {
   cluster_endpoint   = var.cluster_endpoint
   machine_type       = each.value.role
   machine_secrets    = local.machine_secrets
-  talos_version      = var.talos_version
+  talos_version      = local.talos_contract
   kubernetes_version = var.kubernetes_version
   docs               = false
   examples           = false
