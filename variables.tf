@@ -20,24 +20,6 @@ variable "cluster_endpoint" {
   }
 }
 
-variable "talos_version" {
-  description = "Talos version contract used to generate the machine configuration and the secrets, for example v1.14. It is NOT the installed Talos version (that is installer_image): a node on Talos 1.14 runs fine with the v1.13 contract, which writes the older v1alpha1 format. Pin it to the version the cluster was created with and do not raise it at each OS upgrade: raising it changes the generated configuration. v1.13 and v1.14 are supported (the v1.14 contract makes the module write the new multi-document format); later contracts are refused until the module is checked against them."
-  type        = string
-  nullable    = false
-
-  validation {
-    condition     = can(regex("^v?[0-9]+\\.[0-9]+(\\.[0-9]+)?$", var.talos_version))
-    error_message = "The Talos version must look like v1.14 or v1.14.6."
-  }
-
-  # The module writes the v1alpha1 format up to the v1.13 contract and the document format for v1.14 (documents.tf). A later contract may generate more documents,
-  # and a node refuses a setting that is written in both formats: refuse it here, with a clear message, until the module is checked against that Talos release.
-  validation {
-    condition     = !can(regex("^v?[0-9]+\\.[0-9]+", var.talos_version)) || tonumber(regex("^v?[0-9]+\\.([0-9]+)", var.talos_version)[0]) <= 14
-    error_message = "The module is checked against the Talos v1.13 and v1.14 contracts. A later contract can generate documents that conflict with the module's patches, which a node refuses: use v1.14 until the module supports the new release."
-  }
-}
-
 variable "kubernetes_version" {
   description = "Kubernetes version of the cluster, for example v1.37.2. Always set it: the provider default can be newer than the version you tested. Changing it runs the Talos upgrade-k8s procedure on a running cluster."
   type        = string
@@ -72,7 +54,7 @@ variable "nodes" {
     - role: controlplane or worker. The number of control planes must be odd (etcd quorum).
     - ip: IP address of the node, reachable by Terraform on the Talos API (port 50000).
     - install_disk, image: override the cluster-wide values.
-    - labels, taints: Kubernetes node labels and taints (a taint value is "value:effect", for example "dedicated:NoSchedule").
+    - labels, taints: Kubernetes node labels and taints (a taint value is "value:effect", for example "dedicated:NoSchedule"). A worker taint is applied when the node registers: Kubernetes (NodeRestriction) refuses a change on a node that is already registered, so set it before creating the node or recreate the node.
     - config_patches: extra YAML patches for this node only.
   EOT
   type = map(object({
@@ -296,7 +278,7 @@ variable "oidc" {
 }
 
 variable "expose_control_plane_metrics" {
-  description = "Expose etcd, kube-scheduler and kube-controller-manager metrics on all addresses of control planes, for Prometheus. Restrict access to them with a firewall: they are not authenticated for etcd."
+  description = "Expose etcd, kube-scheduler and kube-controller-manager metrics on all addresses of control planes, for Prometheus. Restrict access to them with a firewall: they are not authenticated for etcd. etcd reads its arguments at start: on a running cluster the etcd port opens after the next reboot of each control plane."
   type        = bool
   default     = false
   nullable    = false

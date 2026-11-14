@@ -14,7 +14,6 @@ module "cluster" {
 
   cluster_name       = "demo"
   cluster_endpoint   = "https://192.0.2.2:6443"
-  talos_version      = "v1.14"
   kubernetes_version = "v1.37.2"
 
   nodes = {

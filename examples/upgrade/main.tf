@@ -5,7 +5,6 @@
 # 3. Run `terraform apply -parallelism=1`. talos_machine waits for each node to be ready again, so the nodes upgrade one after the other
 #    and etcd keeps its quorum. Without -parallelism=1, several nodes can restart at the same time.
 #
-# Keep talos_version (the configuration contract) at the version the cluster was created with: it is not the installed version.
 # While creating a cluster, leave drain_on_upgrade off: there is no kubeconfig yet.
 
 terraform {
@@ -47,7 +46,6 @@ module "cluster" {
 
   cluster_name       = "demo"
   cluster_endpoint   = "https://192.0.2.2:6443"
-  talos_version      = "v1.14"
   kubernetes_version = "v1.37.2"
   installer_image    = "factory.talos.dev/installer/SCHEMATIC_ID:v1.14.6"
 

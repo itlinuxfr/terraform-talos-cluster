@@ -6,7 +6,6 @@ mock_provider "talos" {}
 variables {
   cluster_name       = "demo"
   cluster_endpoint   = "https://192.0.2.2:6443"
-  talos_version      = "v1.13"
   kubernetes_version = "v1.37.2"
   nodes = {
     "cp-1"     = { role = "controlplane", ip = "192.0.2.3" }
@@ -37,20 +36,19 @@ run "minimal_cluster_stays_close_to_the_talos_default" {
     condition = (
       data.talos_machine_configuration.node["cp-1"].machine_type == "controlplane" &&
       data.talos_machine_configuration.node["worker-1"].machine_type == "worker" &&
-      data.talos_machine_configuration.node["cp-1"].talos_version == "v1.13" &&
+      data.talos_machine_configuration.node["cp-1"].talos_version == "v1.14" &&
+      talos_machine_secrets.this[0].talos_version == "v1.14" &&
       data.talos_machine_configuration.node["cp-1"].kubernetes_version == "v1.37.2" &&
       data.talos_machine_configuration.node["cp-1"].cluster_endpoint == "https://192.0.2.2:6443"
     )
     error_message = "The configuration of each node must carry its role, the contract version, the Kubernetes version and the endpoint."
   }
-
   assert {
     condition = (
-      yamldecode(data.talos_machine_configuration.node["cp-1"].config_patches[0]) == { machine = {}, cluster = {} } &&
-      length(data.talos_machine_configuration.node["cp-1"].config_patches) == 3 &&
-      length(data.talos_machine_configuration.node["worker-1"].config_patches) == 2
+      length(data.talos_machine_configuration.node["cp-1"].config_patches) == 0 &&
+      length(data.talos_machine_configuration.node["worker-1"].config_patches) == 0
     )
-    error_message = "Without options the module patches must be empty: base, control plane and node for a control plane, base and node for a worker."
+    error_message = "Without options the module must leave the generated documents untouched."
   }
 
   assert {
@@ -63,125 +61,6 @@ run "minimal_cluster_stays_close_to_the_talos_default" {
   }
 }
 
-run "cni_none_without_kube_proxy" {
-  command = plan
-
-  variables {
-    cni                                = "none"
-    disable_kube_proxy                 = true
-    allow_scheduling_on_control_planes = true
-    pod_subnets                        = ["10.244.0.0/16"]
-    service_subnets                    = ["10.96.0.0/12"]
-  }
-
-  assert {
-    condition = (
-      yamldecode(data.talos_machine_configuration.node["cp-1"].config_patches[0]).cluster.network.cni.name == "none" &&
-      yamldecode(data.talos_machine_configuration.node["cp-1"].config_patches[0]).cluster.proxy.disabled == true &&
-      yamldecode(data.talos_machine_configuration.node["cp-1"].config_patches[0]).cluster.allowSchedulingOnControlPlanes == true
-    )
-    error_message = "cni none, no kube-proxy and scheduling on control planes must be written in the cluster section."
-  }
-
-  assert {
-    condition = (
-      yamldecode(data.talos_machine_configuration.node["cp-1"].config_patches[0]).cluster.network.podSubnets == ["10.244.0.0/16"] &&
-      yamldecode(data.talos_machine_configuration.node["cp-1"].config_patches[0]).cluster.network.serviceSubnets == ["10.96.0.0/12"]
-    )
-    error_message = "Pod and service subnets must be written."
-  }
-}
-
-run "static_network_and_virtual_ip" {
-  command = plan
-
-  variables {
-    network = { cidr = "192.0.2.0/27", gateway = "192.0.2.1", vip = "192.0.2.2" }
-  }
-
-  assert {
-    condition = (
-      yamldecode(data.talos_machine_configuration.node["cp-1"].config_patches[0]).machine.kubelet.nodeIP.validSubnets == ["192.0.2.0/27"] &&
-      yamldecode(data.talos_machine_configuration.node["cp-1"].config_patches[1]).cluster.etcd.advertisedSubnets == ["192.0.2.0/27"] &&
-      yamldecode(data.talos_machine_configuration.node["cp-1"].config_patches[1]).cluster.apiServer.certSANs == ["192.0.2.2"]
-    )
-    error_message = "The network cidr must become the node subnet of kubelet and etcd, and the virtual IP must be an API server SAN."
-  }
-
-  assert {
-    condition = (
-      yamldecode(data.talos_machine_configuration.node["cp-1"].config_patches[2]).machine.network.interfaces[0].addresses == ["192.0.2.3/27"] &&
-      yamldecode(data.talos_machine_configuration.node["cp-1"].config_patches[2]).machine.network.interfaces[0].dhcp == false &&
-      yamldecode(data.talos_machine_configuration.node["cp-1"].config_patches[2]).machine.network.interfaces[0].routes[0].gateway == "192.0.2.1" &&
-      yamldecode(data.talos_machine_configuration.node["cp-1"].config_patches[2]).machine.network.interfaces[0].vip.ip == "192.0.2.2"
-    )
-    error_message = "A control plane must get its static address, the default route and the virtual IP."
-  }
-
-  assert {
-    condition = (
-      yamldecode(data.talos_machine_configuration.node["worker-1"].config_patches[1]).machine.network.interfaces[0].addresses == ["192.0.2.6/27"] &&
-      !can(yamldecode(data.talos_machine_configuration.node["worker-1"].config_patches[1]).machine.network.interfaces[0].vip)
-    )
-    error_message = "A worker must get its static address and no virtual IP."
-  }
-}
-
-run "nameservers_and_kubelet_arguments" {
-  command = plan
-
-  variables {
-    nameservers        = ["192.0.2.53"]
-    node_subnets       = ["192.0.2.0/27"]
-    kubelet_extra_args = { "rotate-server-certificates" = "true" }
-  }
-
-  assert {
-    condition = (
-      yamldecode(data.talos_machine_configuration.node["worker-1"].config_patches[0]).machine.network.nameservers == ["192.0.2.53"] &&
-      yamldecode(data.talos_machine_configuration.node["worker-1"].config_patches[0]).machine.kubelet.extraArgs["rotate-server-certificates"] == "true" &&
-      yamldecode(data.talos_machine_configuration.node["worker-1"].config_patches[0]).machine.kubelet.nodeIP.validSubnets == ["192.0.2.0/27"]
-    )
-    error_message = "Nameservers, kubelet arguments and node subnets must be written for every node."
-  }
-}
-
-run "labels_and_taints" {
-  command = plan
-
-  variables {
-    node_labels = { "topology.kubernetes.io/region" = "lab", "tier" = "default" }
-    nodes = {
-      "cp-1" = { role = "controlplane", ip = "192.0.2.3" }
-      "worker-1" = {
-        role   = "worker"
-        ip     = "192.0.2.6"
-        labels = { "tier" = "storage", "topology.kubernetes.io/zone" = "pve-01" }
-        taints = { "dedicated" = "storage:NoSchedule" }
-      }
-    }
-  }
-
-  assert {
-    condition = (
-      yamldecode(data.talos_machine_configuration.node["worker-1"].config_patches[1]).machine.nodeLabels == {
-        "topology.kubernetes.io/region" = "lab"
-        "tier"                          = "storage"
-        "topology.kubernetes.io/zone"   = "pve-01"
-      } &&
-      yamldecode(data.talos_machine_configuration.node["worker-1"].config_patches[1]).machine.nodeTaints == { "dedicated" = "storage:NoSchedule" }
-    )
-    error_message = "Node labels must win over cluster labels, and taints must be written."
-  }
-
-  assert {
-    condition = (
-      yamldecode(data.talos_machine_configuration.node["cp-1"].config_patches[2]).machine.nodeLabels == { "topology.kubernetes.io/region" = "lab", "tier" = "default" } &&
-      !can(yamldecode(data.talos_machine_configuration.node["cp-1"].config_patches[2]).machine.nodeTaints)
-    )
-    error_message = "A node without its own labels must get the cluster labels, and no taint."
-  }
-}
 
 run "installer_image_and_install_disk_with_overrides" {
   command = plan
@@ -210,10 +89,12 @@ run "installer_image_and_install_disk_with_overrides" {
 
   assert {
     condition = (
-      yamldecode(data.talos_machine_configuration.node["cp-1"].config_patches[2]).machine.install == { disk = "/dev/sda", image = "factory.example/installer:v1.14.6" } &&
-      yamldecode(data.talos_machine_configuration.node["worker-1"].config_patches[1]).machine.install == { disk = "/dev/nvme0n1", image = "factory.example/installer-gpu:v1.14.6" }
+      [for p in data.talos_machine_configuration.node["cp-1"].config_patches : yamldecode(p) if try(yamldecode(p).kind, "") == "UnattendedInstallConfig"][0].installer.image == "factory.example/installer:v1.14.6" &&
+      [for p in data.talos_machine_configuration.node["cp-1"].config_patches : yamldecode(p) if try(yamldecode(p).kind, "") == "UnattendedInstallConfig"][0].provisioning.diskSelector.match == "disk.dev_path == \"/dev/sda\"" &&
+      [for p in data.talos_machine_configuration.node["worker-1"].config_patches : yamldecode(p) if try(yamldecode(p).kind, "") == "UnattendedInstallConfig"][0].installer.image == "factory.example/installer-gpu:v1.14.6" &&
+      [for p in data.talos_machine_configuration.node["worker-1"].config_patches : yamldecode(p) if try(yamldecode(p).kind, "") == "UnattendedInstallConfig"][0].provisioning.diskSelector.match == "disk.dev_path == \"/dev/nvme0n1\""
     )
-    error_message = "The installation disk and image of each node must be written in its patch."
+    error_message = "The installation disk and image of each node must be written in its UnattendedInstallConfig."
   }
 }
 
@@ -226,27 +107,27 @@ run "disk_encryption_with_tpm" {
 
   assert {
     condition = (
-      length(data.talos_machine_configuration.node["cp-1"].config_patches) == 5 &&
-      yamldecode(data.talos_machine_configuration.node["cp-1"].config_patches[2]).kind == "VolumeConfig" &&
-      yamldecode(data.talos_machine_configuration.node["cp-1"].config_patches[2]).name == "STATE" &&
-      yamldecode(data.talos_machine_configuration.node["cp-1"].config_patches[2]).encryption.provider == "luks2" &&
-      !can(yamldecode(data.talos_machine_configuration.node["cp-1"].config_patches[2]).encryption.keys[0].lockToState) &&
-      yamldecode(data.talos_machine_configuration.node["cp-1"].config_patches[2]).encryption.keys[0].tpm == {}
+      length(data.talos_machine_configuration.node["cp-1"].config_patches) == 2 &&
+      yamldecode(data.talos_machine_configuration.node["cp-1"].config_patches[0]).kind == "VolumeConfig" &&
+      yamldecode(data.talos_machine_configuration.node["cp-1"].config_patches[0]).name == "STATE" &&
+      yamldecode(data.talos_machine_configuration.node["cp-1"].config_patches[0]).encryption.provider == "luks2" &&
+      !can(yamldecode(data.talos_machine_configuration.node["cp-1"].config_patches[0]).encryption.keys[0].lockToState) &&
+      yamldecode(data.talos_machine_configuration.node["cp-1"].config_patches[0]).encryption.keys[0].tpm == {}
     )
     error_message = "STATE must be encrypted with LUKS2 and a TPM key, without lockToState."
   }
 
   assert {
     condition = (
-      yamldecode(data.talos_machine_configuration.node["cp-1"].config_patches[3]).name == "EPHEMERAL" &&
-      yamldecode(data.talos_machine_configuration.node["cp-1"].config_patches[3]).encryption.keys[0].lockToState == true &&
-      yamldecode(data.talos_machine_configuration.node["cp-1"].config_patches[3]).encryption.keys[0].tpm == {}
+      yamldecode(data.talos_machine_configuration.node["cp-1"].config_patches[1]).name == "EPHEMERAL" &&
+      yamldecode(data.talos_machine_configuration.node["cp-1"].config_patches[1]).encryption.keys[0].lockToState == true &&
+      yamldecode(data.talos_machine_configuration.node["cp-1"].config_patches[1]).encryption.keys[0].tpm == {}
     )
     error_message = "EPHEMERAL must be encrypted with a TPM key locked to STATE."
   }
 
   assert {
-    condition     = length(data.talos_machine_configuration.node["worker-1"].config_patches) == 4
+    condition     = length(data.talos_machine_configuration.node["worker-1"].config_patches) == 2
     error_message = "Workers must get the encryption patches too."
   }
 }
@@ -259,12 +140,12 @@ run "disk_encryption_requires_secureboot" {
   }
 
   assert {
-    condition     = yamldecode(data.talos_machine_configuration.node["cp-1"].config_patches[2]).encryption.keys[0].tpm.checkSecurebootStatusOnEnroll == true
+    condition     = yamldecode(data.talos_machine_configuration.node["cp-1"].config_patches[0]).encryption.keys[0].tpm.checkSecurebootStatusOnEnroll == true
     error_message = "tpm_require_secureboot must make the enrollment check SecureBoot, with the field next to options and not inside it."
   }
 
   assert {
-    condition     = !can(yamldecode(data.talos_machine_configuration.node["cp-1"].config_patches[2]).encryption.keys[0].tpm.options)
+    condition     = !can(yamldecode(data.talos_machine_configuration.node["cp-1"].config_patches[0]).encryption.keys[0].tpm.options)
     error_message = "The Talos parser refuses checkSecurebootStatusOnEnroll inside tpm.options: the module must not write an options block for it."
   }
 }
@@ -278,111 +159,44 @@ run "disk_encryption_with_node_id" {
 
   assert {
     condition = (
-      yamldecode(data.talos_machine_configuration.node["cp-1"].config_patches[2]).encryption.keys[0].nodeID == {} &&
-      !can(yamldecode(data.talos_machine_configuration.node["cp-1"].config_patches[2]).encryption.keys[0].tpm)
+      yamldecode(data.talos_machine_configuration.node["cp-1"].config_patches[0]).encryption.keys[0].nodeID == {} &&
+      !can(yamldecode(data.talos_machine_configuration.node["cp-1"].config_patches[0]).encryption.keys[0].tpm)
     )
     error_message = "The node_id method must use a nodeID key and no TPM key."
   }
 }
 
-run "oidc_authentication" {
-  command = plan
-
-  variables {
-    oidc = {
-      issuer_url     = "https://dex.example.test"
-      client_id      = "kubernetes"
-      ca_certificate = "-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----\n"
-    }
-  }
-
-  assert {
-    condition = (
-      yamldecode(data.talos_machine_configuration.node["cp-1"].config_patches[1]).machine.files[0].path == "/var/etc/kubernetes/authentication-config.yaml" &&
-      yamldecode(data.talos_machine_configuration.node["cp-1"].config_patches[1]).machine.files[0].op == "create" &&
-      yamldecode(data.talos_machine_configuration.node["cp-1"].config_patches[1]).cluster.apiServer.extraArgs["authentication-config"] == "/var/etc/kubernetes/authentication-config.yaml" &&
-      yamldecode(data.talos_machine_configuration.node["cp-1"].config_patches[1]).cluster.apiServer.extraVolumes[0].readonly == true
-    )
-    error_message = "The OIDC file, the API server argument and the volume must be written for control planes."
-  }
-
-  assert {
-    condition = (
-      yamldecode(yamldecode(data.talos_machine_configuration.node["cp-1"].config_patches[1]).machine.files[0].content).apiVersion == "apiserver.config.k8s.io/v1" &&
-      yamldecode(yamldecode(data.talos_machine_configuration.node["cp-1"].config_patches[1]).machine.files[0].content).jwt[0].issuer.url == "https://dex.example.test" &&
-      yamldecode(yamldecode(data.talos_machine_configuration.node["cp-1"].config_patches[1]).machine.files[0].content).jwt[0].issuer.audiences == ["kubernetes"] &&
-      yamldecode(yamldecode(data.talos_machine_configuration.node["cp-1"].config_patches[1]).machine.files[0].content).jwt[0].claimMappings.username == { claim = "email", prefix = "oidc:" } &&
-      yamldecode(yamldecode(data.talos_machine_configuration.node["cp-1"].config_patches[1]).machine.files[0].content).jwt[0].claimMappings.groups == { claim = "groups", prefix = "oidc:" }
-    )
-    error_message = "The AuthenticationConfiguration must carry the issuer, the audience and the default claim mappings."
-  }
-
-  assert {
-    condition     = yamldecode(data.talos_machine_configuration.node["worker-1"].config_patches[1]) == { machine = {} }
-    error_message = "Workers must not get the OIDC file."
-  }
-}
-
-run "oidc_without_certificate_authority" {
-  command = plan
-
-  variables {
-    oidc = { issuer_url = "https://dex.example.test", client_id = "kubernetes" }
-  }
-
-  assert {
-    condition     = !can(yamldecode(yamldecode(data.talos_machine_configuration.node["cp-1"].config_patches[1]).machine.files[0].content).jwt[0].issuer.certificateAuthority)
-    error_message = "Without ca_certificate the issuer must not carry a certificateAuthority."
-  }
-}
-
-run "control_plane_metrics_exposed" {
-  command = plan
-
-  variables {
-    expose_control_plane_metrics = true
-  }
-
-  assert {
-    condition = (
-      yamldecode(data.talos_machine_configuration.node["cp-1"].config_patches[1]).cluster.etcd.extraArgs["listen-metrics-urls"] == "http://0.0.0.0:2381" &&
-      yamldecode(data.talos_machine_configuration.node["cp-1"].config_patches[1]).cluster.controllerManager.extraArgs["bind-address"] == "0.0.0.0" &&
-      yamldecode(data.talos_machine_configuration.node["cp-1"].config_patches[1]).cluster.scheduler.extraArgs["bind-address"] == "0.0.0.0"
-    )
-    error_message = "etcd, kube-controller-manager and kube-scheduler metrics must be exposed on control planes."
-  }
-}
 
 run "caller_patches_come_last_in_order" {
   command = plan
 
   variables {
     config_patches = {
-      all          = ["machine:\n  sysctls:\n    vm.max_map_count: \"262144\"\n"]
+      all          = ["apiVersion: v1alpha1\nkind: SysctlConfig\nparams:\n  vm.max_map_count: \"262144\"\n"]
       controlplane = ["cluster:\n  discovery:\n    enabled: false\n"]
-      worker       = ["machine:\n  kubelet:\n    extraConfig:\n      maxPods: 200\n"]
+      worker       = ["apiVersion: v1alpha1\nkind: KubeletConfig\nextraArgs:\n  max-pods: \"200\"\n"]
     }
     nodes = {
-      "cp-1"     = { role = "controlplane", ip = "192.0.2.3", config_patches = ["machine:\n  nodeAnnotations:\n    owner: me\n"] }
+      "cp-1"     = { role = "controlplane", ip = "192.0.2.3", config_patches = ["apiVersion: v1alpha1\nkind: KubeNodeConfig\nannotations:\n  owner: me\n"] }
       "worker-1" = { role = "worker", ip = "192.0.2.6" }
     }
   }
 
   assert {
     condition = (
-      length(data.talos_machine_configuration.node["cp-1"].config_patches) == 6 &&
-      can(yamldecode(data.talos_machine_configuration.node["cp-1"].config_patches[3]).machine.sysctls) &&
-      can(yamldecode(data.talos_machine_configuration.node["cp-1"].config_patches[4]).cluster.discovery) &&
-      can(yamldecode(data.talos_machine_configuration.node["cp-1"].config_patches[5]).machine.nodeAnnotations)
+      length(data.talos_machine_configuration.node["cp-1"].config_patches) == 3 &&
+      yamldecode(data.talos_machine_configuration.node["cp-1"].config_patches[0]).kind == "SysctlConfig" &&
+      can(yamldecode(data.talos_machine_configuration.node["cp-1"].config_patches[1]).cluster.discovery) &&
+      yamldecode(data.talos_machine_configuration.node["cp-1"].config_patches[2]).annotations == { owner = "me" }
     )
     error_message = "Order must be: module patches, patches for all nodes, patches for the role, patches of the node."
   }
 
   assert {
     condition = (
-      length(data.talos_machine_configuration.node["worker-1"].config_patches) == 4 &&
-      can(yamldecode(data.talos_machine_configuration.node["worker-1"].config_patches[2]).machine.sysctls) &&
-      can(yamldecode(data.talos_machine_configuration.node["worker-1"].config_patches[3]).machine.kubelet.extraConfig)
+      length(data.talos_machine_configuration.node["worker-1"].config_patches) == 2 &&
+      yamldecode(data.talos_machine_configuration.node["worker-1"].config_patches[0]).kind == "SysctlConfig" &&
+      yamldecode(data.talos_machine_configuration.node["worker-1"].config_patches[1]).extraArgs == { "max-pods" = "200" }
     )
     error_message = "A worker must get the patches for all nodes and the worker patches, not the control plane ones."
   }

@@ -6,7 +6,6 @@ mock_provider "talos" {}
 variables {
   cluster_name       = "demo"
   cluster_endpoint   = "https://192.0.2.2:6443"
-  talos_version      = "v1.14"
   kubernetes_version = "v1.37.2"
   nodes = {
     "cp-1"     = { role = "controlplane", ip = "192.0.2.3" }
