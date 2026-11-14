@@ -25,6 +25,10 @@ Design rules specific to this module:
 - Tests use `mock_provider`, which does not run the Talos configuration parser. Before a release that changes a patch, generate a real configuration offline: in a throwaway
   directory call the module and `terraform apply -target=module.<name>.data.talos_machine_configuration.node` with the real provider (it generates the PKI and the configuration locally,
   without contacting a machine), then read the result. **Delete that directory afterwards: its state holds generated secrets.**
+- **That real check must turn on every typed option at once, including the nested ones** (`tpm_require_secureboot`, `oidc`, `encryption`, subnets, patches), and the other values of an option (`node_id`).
+  An option that was not in the check was not checked: `tpm_require_secureboot` was written under `tpm.options` and the Talos parser refused it only at the first real apply.
+  The Talos documentation tables list nested fields in a way that is easy to misread: confirm the nesting in the Go types (`yaml:"..."` tags in
+  `pkg/machinery/config/types/block/*.go` of the Talos version embedded in the provider, see its `go.mod`), not in the website tables.
 - A mutation check (break one validation, the patch order, the secrets switch) must make a test fail.
 
 ## Commands

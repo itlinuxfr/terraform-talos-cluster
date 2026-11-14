@@ -110,7 +110,8 @@ locals {
 
   encryption_key = merge(
     local.encryption_method == "tpm" ? {
-      tpm = try(var.encryption.tpm_require_secureboot, false) ? { options = { checkSecurebootStatusOnEnroll = true } } : {}
+      # checkSecurebootStatusOnEnroll is a field of tpm itself, next to options (which only holds pcrs). Under options, the Talos parser refuses the document.
+      tpm = try(var.encryption.tpm_require_secureboot, false) ? { checkSecurebootStatusOnEnroll = true } : {}
     } : {},
     local.encryption_method == "node_id" ? { nodeID = {} } : {},
   )
