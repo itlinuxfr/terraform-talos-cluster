@@ -259,8 +259,13 @@ run "disk_encryption_requires_secureboot" {
   }
 
   assert {
-    condition     = yamldecode(data.talos_machine_configuration.node["cp-1"].config_patches[2]).encryption.keys[0].tpm.options.checkSecurebootStatusOnEnroll == true
-    error_message = "tpm_require_secureboot must make the enrollment check SecureBoot."
+    condition     = yamldecode(data.talos_machine_configuration.node["cp-1"].config_patches[2]).encryption.keys[0].tpm.checkSecurebootStatusOnEnroll == true
+    error_message = "tpm_require_secureboot must make the enrollment check SecureBoot, with the field next to options and not inside it."
+  }
+
+  assert {
+    condition     = !can(yamldecode(data.talos_machine_configuration.node["cp-1"].config_patches[2]).encryption.keys[0].tpm.options)
+    error_message = "The Talos parser refuses checkSecurebootStatusOnEnroll inside tpm.options: the module must not write an options block for it."
   }
 }
 
