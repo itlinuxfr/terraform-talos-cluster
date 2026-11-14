@@ -54,7 +54,7 @@ variable "nodes" {
     - role: controlplane or worker. The number of control planes must be odd (etcd quorum).
     - ip: IP address of the node, reachable by Terraform on the Talos API (port 50000).
     - install_disk, image: override the cluster-wide values.
-    - labels, taints: Kubernetes node labels and taints (a taint value is "value:effect", for example "dedicated:NoSchedule").
+    - labels, taints: Kubernetes node labels and taints (a taint value is "value:effect", for example "dedicated:NoSchedule"). A worker taint is applied when the node registers: Kubernetes (NodeRestriction) refuses a change on a node that is already registered, so set it before creating the node or recreate the node.
     - config_patches: extra YAML patches for this node only.
   EOT
   type = map(object({
@@ -278,7 +278,7 @@ variable "oidc" {
 }
 
 variable "expose_control_plane_metrics" {
-  description = "Expose etcd, kube-scheduler and kube-controller-manager metrics on all addresses of control planes, for Prometheus. Restrict access to them with a firewall: they are not authenticated for etcd."
+  description = "Expose etcd, kube-scheduler and kube-controller-manager metrics on all addresses of control planes, for Prometheus. Restrict access to them with a firewall: they are not authenticated for etcd. etcd reads its arguments at start: on a running cluster the etcd port opens after the next reboot of each control plane."
   type        = bool
   default     = false
   nullable    = false
