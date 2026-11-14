@@ -16,6 +16,10 @@ Design rules specific to this module:
 - Machine configuration is generated per node (`data.talos_machine_configuration.node`), because `talos_machine` takes a finished configuration and has no patch argument.
 - Typed options are limited to common Talos settings. Everything else goes through `config_patches`. Patch order is part of the contract: base, control plane,
   disk encryption, node, then the caller's patches (all, role, node). Do not reorder it.
+- **The module writes the old v1alpha1 format and refuses a `talos_version` contract of v1.14 or later.** From v1.14 the provider generates the new document format
+  (`UnattendedInstallConfig`, `ResolverConfig`, `HostnameConfig`, `KubeletConfig`, `KubeAPIServerConfig`, `KubeProxyConfig`...), and the node refuses it together with the same settings in v1alpha1
+  (found at the first real apply, the offline check cannot see it: the node validates, not the provider). Removing the guard needs the module to write the new documents when the contract is v1.14 or later,
+  checked offline with every option and then on a real node. Keep the guard until then.
 - Terraform cannot unify `cond ? {a = x, b = y} : {}` when the attributes have different types. Build sections with `merge()` of single-attribute conditionals.
 - `keys()` returns names in lexical order: the first control plane by name bootstraps etcd. No `sort()` needed.
 - The module never writes files and never reads files: the caller passes certificates as strings and writes the outputs where it wants.

@@ -21,13 +21,20 @@ variable "cluster_endpoint" {
 }
 
 variable "talos_version" {
-  description = "Talos version contract used to generate the machine configuration and the secrets, for example v1.14. It is NOT the installed Talos version (that is installer_image). Pin it to the version the cluster was created with and do not raise it at each OS upgrade: raising it changes the generated configuration."
+  description = "Talos version contract used to generate the machine configuration and the secrets, for example v1.13. It is NOT the installed Talos version (that is installer_image): a node on Talos 1.14 runs fine with the v1.13 contract. Pin it to the version the cluster was created with and do not raise it at each OS upgrade: raising it changes the generated configuration. v1.14 and later are refused for now: see the validation."
   type        = string
   nullable    = false
 
   validation {
     condition     = can(regex("^v?[0-9]+\\.[0-9]+(\\.[0-9]+)?$", var.talos_version))
-    error_message = "The Talos version must look like v1.14 or v1.14.6."
+    error_message = "The Talos version must look like v1.13 or v1.13.12."
+  }
+
+  # The module writes the old v1alpha1 format. From the v1.14 contract the Talos provider generates the new document format (UnattendedInstallConfig, ResolverConfig,
+  # KubeletConfig, KubeAPIServerConfig...), and a node refuses a configuration that has both. Refuse it here, with a clear message, instead of at the first apply.
+  validation {
+    condition     = !can(regex("^v?[0-9]+\\.[0-9]+", var.talos_version)) || tonumber(regex("^v?[0-9]+\\.([0-9]+)", var.talos_version)[0]) <= 13
+    error_message = "The module writes the v1alpha1 configuration format, and the v1.14 contract and later make the Talos provider generate the new document format, which a node refuses together with it. Use the v1.13 contract (a node on Talos 1.14 accepts it) until the module writes the new format."
   }
 }
 

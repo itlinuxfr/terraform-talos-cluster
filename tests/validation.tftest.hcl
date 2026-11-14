@@ -5,7 +5,7 @@ mock_provider "talos" {}
 variables {
   cluster_name       = "demo"
   cluster_endpoint   = "https://192.0.2.2:6443"
-  talos_version      = "v1.14"
+  talos_version      = "v1.13"
   kubernetes_version = "v1.37.2"
   nodes = {
     "cp-1"     = { role = "controlplane", ip = "192.0.2.3" }
@@ -48,8 +48,40 @@ run "talos_version_without_minor_refused" {
 run "talos_version_accepts_a_patch_release" {
   command = plan
   variables {
+    talos_version = "v1.13.12"
+  }
+}
+
+run "talos_version_accepts_an_older_contract" {
+  command = plan
+  variables {
+    talos_version = "1.12"
+  }
+}
+
+# From the v1.14 contract the provider generates the new document format, which a node refuses together with the v1alpha1 fields this module writes.
+run "contract_v1_14_refused" {
+  command = plan
+  variables {
+    talos_version = "v1.14"
+  }
+  expect_failures = [var.talos_version]
+}
+
+run "contract_v1_14_patch_release_refused" {
+  command = plan
+  variables {
     talos_version = "v1.14.6"
   }
+  expect_failures = [var.talos_version]
+}
+
+run "contract_v1_15_refused" {
+  command = plan
+  variables {
+    talos_version = "v1.15"
+  }
+  expect_failures = [var.talos_version]
 }
 
 run "kubernetes_version_without_v_refused" {

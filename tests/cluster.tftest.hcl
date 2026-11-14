@@ -6,7 +6,7 @@ mock_provider "talos" {}
 variables {
   cluster_name       = "demo"
   cluster_endpoint   = "https://192.0.2.2:6443"
-  talos_version      = "v1.14"
+  talos_version      = "v1.13"
   kubernetes_version = "v1.37.2"
   nodes = {
     "cp-1"     = { role = "controlplane", ip = "192.0.2.3" }
@@ -37,7 +37,7 @@ run "minimal_cluster_stays_close_to_the_talos_default" {
     condition = (
       data.talos_machine_configuration.node["cp-1"].machine_type == "controlplane" &&
       data.talos_machine_configuration.node["worker-1"].machine_type == "worker" &&
-      data.talos_machine_configuration.node["cp-1"].talos_version == "v1.14" &&
+      data.talos_machine_configuration.node["cp-1"].talos_version == "v1.13" &&
       data.talos_machine_configuration.node["cp-1"].kubernetes_version == "v1.37.2" &&
       data.talos_machine_configuration.node["cp-1"].cluster_endpoint == "https://192.0.2.2:6443"
     )
