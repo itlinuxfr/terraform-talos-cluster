@@ -1,0 +1,58 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # Oldest supported release (the minor required by versions.tf) and the latest release.
+        terraform: ["1.15.9", "latest"]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+        with:
+          terraform_version: ${{ matrix.terraform }}
+      - uses: terraform-linters/setup-tflint@6ffdbaa3be476b3431f7275c26966ef32ff60337 # v6.3.2
+
+      - name: Format
+        run: terraform fmt -check -recursive
+
+      - name: Validate module
+        run: |
+          terraform init -backend=false
+          terraform validate
+
+      - name: Validate examples
+        run: |
+          for dir in examples/*/; do
+            terraform -chdir="$dir" init -backend=false
+            terraform -chdir="$dir" validate
+          done
+
+      - name: tflint
+        run: |
+          tflint --init
+          tflint --recursive
+
+      - name: Test
+        run: terraform test
+
+  security:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          scan-type: config
+          scan-ref: .
+          severity: HIGH,CRITICAL
+          exit-code: "1"
