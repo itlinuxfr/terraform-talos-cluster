@@ -173,10 +173,10 @@ locals {
   # Order matters: the module's patches first, then the caller's, so that the caller can override.
   node_patches = {
     for name, node in var.nodes : name => concat(
-      [local.base_patch],
-      node.role == "controlplane" ? [local.controlplane_patch] : [],
+      local.multidoc ? local.doc_base : [local.base_patch],
+      node.role == "controlplane" ? (local.multidoc ? local.doc_controlplane : [local.controlplane_patch]) : [],
       local.encryption_patches,
-      [local.node_patch[name]],
+      local.multidoc ? local.doc_node[name] : [local.node_patch[name]],
       var.config_patches.all,
       node.role == "controlplane" ? var.config_patches.controlplane : var.config_patches.worker,
       node.config_patches,

@@ -12,7 +12,7 @@ module "cluster" {
 
   cluster_name       = "demo"
   cluster_endpoint   = "https://192.0.2.2:6443"
-  talos_version      = "v1.13"
+  talos_version      = "v1.14"
   kubernetes_version = "v1.37.2"
 
   nodes = {
@@ -47,10 +47,13 @@ Checked in the provider source (v0.12.0):
   by default, which is what a new cluster needs. For an upgrade set it to `true` and pass `kubeconfig` from an ephemeral `talos_cluster_kubeconfig`
   (it is built from the machine secrets, without reaching the cluster; see `examples/upgrade`).
 - `talos_version` is the configuration contract, not the installed version. Keep it at the version the cluster was created with.
-- **Use the `v1.13` contract, even on Talos 1.14 nodes.** From the `v1.14` contract the Talos provider generates the new document format (`UnattendedInstallConfig`, `ResolverConfig`,
-  `KubeletConfig`, `KubeAPIServerConfig`...), and this module still writes the old `v1alpha1` fields: a node refuses a configuration that has both
-  (`X is already set in v1alpha1 config`). The module therefore refuses a `v1.14` or later contract with a clear message. A node on Talos 1.14 runs fine with the `v1.13` contract; set
-  `installer_image` to the Talos 1.14 installer to install it. Writing the new format is planned. Checked on a real cluster: one control plane and one worker, on Talos 1.14.6 with a `v1.13` contract.
+- **The contract decides the format.** With the `v1.14` contract the Talos provider generates the new multi-document configuration (`UnattendedInstallConfig`, `ResolverConfig`,
+  `KubeletConfig`, `KubeNodeConfig`, `KubeAPIServerConfig`...), and the module patches those documents. With `v1.13` or earlier it writes the deprecated `v1alpha1` fields. A node refuses a
+  setting written in both formats, so the module never mixes them. Later contracts are refused until the module is checked against them. Settings you pass through `config_patches`
+  must use the same format as the contract: for `v1.14`, write documents (for example `SysctlConfig`), not `machine.sysctls`.
+- With the `v1.14` contract, the primary network card is renamed `net0` by a `LinkAliasConfig` (it matches the one physical Ethernet link), and the static address, the default route and the
+  virtual IP are set on it. A machine with several physical cards needs its own patches. `allow_scheduling_on_control_planes` deletes and rewrites the generated `KubeNodeConfig` (a merge patch cannot
+  remove the taint), which also drops its `exclude-from-external-load-balancers` label. etcd has no document yet: its settings stay in the v1alpha1 `cluster.etcd` section.
 
 ## Secrets and state
 By default the module generates the cluster secrets, so **the Terraform state holds the cluster PKI**: use an encrypted remote backend and back it up.
@@ -105,7 +108,7 @@ No modules.
 | <a name="input_cluster_name"></a> [cluster\_name](#input\_cluster\_name) | Name of the cluster. It ends up in the talosconfig and in the kubeconfig. | `string` | n/a | yes |
 | <a name="input_kubernetes_version"></a> [kubernetes\_version](#input\_kubernetes\_version) | Kubernetes version of the cluster, for example v1.37.2. Always set it: the provider default can be newer than the version you tested. Changing it runs the Talos upgrade-k8s procedure on a running cluster. | `string` | n/a | yes |
 | <a name="input_nodes"></a> [nodes](#input\_nodes) | Nodes, keyed by name. The name is the Kubernetes node name when the machine takes its hostname from the platform.<br/>- role: controlplane or worker. The number of control planes must be odd (etcd quorum).<br/>- ip: IP address of the node, reachable by Terraform on the Talos API (port 50000).<br/>- install\_disk, image: override the cluster-wide values.<br/>- labels, taints: Kubernetes node labels and taints (a taint value is "value:effect", for example "dedicated:NoSchedule").<br/>- config\_patches: extra YAML patches for this node only. | <pre>map(object({<br/>    role           = string<br/>    ip             = string<br/>    install_disk   = optional(string)<br/>    image          = optional(string)<br/>    labels         = optional(map(string), {})<br/>    taints         = optional(map(string), {})<br/>    config_patches = optional(list(string), [])<br/>  }))</pre> | n/a | yes |
-| <a name="input_talos_version"></a> [talos\_version](#input\_talos\_version) | Talos version contract used to generate the machine configuration and the secrets, for example v1.13. It is NOT the installed Talos version (that is installer\_image): a node on Talos 1.14 runs fine with the v1.13 contract. Pin it to the version the cluster was created with and do not raise it at each OS upgrade: raising it changes the generated configuration. v1.14 and later are refused for now: see the validation. | `string` | n/a | yes |
+| <a name="input_talos_version"></a> [talos\_version](#input\_talos\_version) | Talos version contract used to generate the machine configuration and the secrets, for example v1.14. It is NOT the installed Talos version (that is installer\_image): a node on Talos 1.14 runs fine with the v1.13 contract, which writes the older v1alpha1 format. Pin it to the version the cluster was created with and do not raise it at each OS upgrade: raising it changes the generated configuration. v1.13 and v1.14 are supported (the v1.14 contract makes the module write the new multi-document format); later contracts are refused until the module is checked against them. | `string` | n/a | yes |
 | <a name="input_allow_scheduling_on_control_planes"></a> [allow\_scheduling\_on\_control\_planes](#input\_allow\_scheduling\_on\_control\_planes) | Let workloads run on control planes. Needed for a cluster without workers. | `bool` | `false` | no |
 | <a name="input_api_server_cert_sans"></a> [api\_server\_cert\_sans](#input\_api\_server\_cert\_sans) | Extra names or IP addresses in the Kubernetes API server certificate. network.vip is added automatically. | `list(string)` | `[]` | no |
 | <a name="input_cni"></a> [cni](#input\_cni) | CNI: flannel (the Talos default) or none, to install your own, for example Cilium. With none, nodes stay NotReady until the CNI is installed. | `string` | `"flannel"` | no |

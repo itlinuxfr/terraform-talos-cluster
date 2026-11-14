@@ -59,27 +59,33 @@ run "talos_version_accepts_an_older_contract" {
   }
 }
 
-# From the v1.14 contract the provider generates the new document format, which a node refuses together with the v1alpha1 fields this module writes.
-run "contract_v1_14_refused" {
+# The module writes the multi-document format for the v1.14 contract. A later contract is refused until the module is checked against it.
+run "talos_version_accepts_contract_v1_14" {
   command = plan
   variables {
     talos_version = "v1.14"
   }
-  expect_failures = [var.talos_version]
 }
 
-run "contract_v1_14_patch_release_refused" {
+run "talos_version_accepts_v1_14_patch_release" {
   command = plan
   variables {
     talos_version = "v1.14.6"
   }
-  expect_failures = [var.talos_version]
 }
 
 run "contract_v1_15_refused" {
   command = plan
   variables {
     talos_version = "v1.15"
+  }
+  expect_failures = [var.talos_version]
+}
+
+run "contract_v1_15_patch_release_refused" {
+  command = plan
+  variables {
+    talos_version = "v1.15.0"
   }
   expect_failures = [var.talos_version]
 }

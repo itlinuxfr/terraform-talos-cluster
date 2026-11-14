@@ -47,7 +47,7 @@ module "cluster" {
 
   cluster_name       = "demo"
   cluster_endpoint   = "https://192.0.2.2:6443"
-  talos_version      = "v1.13"
+  talos_version      = "v1.14"
   kubernetes_version = "v1.37.2"
   installer_image    = "factory.talos.dev/installer/SCHEMATIC_ID:v1.14.6"
 
