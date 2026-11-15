@@ -25,7 +25,7 @@ module "cluster" {
 }
 ```
 
-See [`examples/`](examples/): a basic cluster, a hardened one (no CNI, no kube-proxy, LUKS2 sealed in a TPM, OIDC, metrics), and an OS upgrade with drain.
+See [`examples/`](examples/): a basic cluster, a hardened one (no CNI, no kube-proxy, LUKS2 sealed in a TPM, OIDC, metrics), an OS upgrade with drain, and extra Talos documents (NTP servers and a custom CA) added through `config_patches`.
 
 ## How it works
 The module has typed options for the common settings (versions, nodes, network, CNI, kube-proxy, labels and taints, disk encryption, OIDC, control plane metrics)
